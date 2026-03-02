@@ -5240,6 +5240,10 @@ func (s *SqlStore) GetServiceTargetByTargetID(ctx context.Context, lockStrength 
 
 // CreateCACertificate persists a new CA certificate in the database.
 func (s *SqlStore) CreateCACertificate(ctx context.Context, caCert *ca.CACertificate) error {
+	if err := caCert.EncryptSensitiveData(s.fieldEncrypt); err != nil {
+		return fmt.Errorf("encrypt CA certificate: %w", err)
+	}
+
 	result := s.db.Create(caCert)
 	if result.Error != nil {
 		log.WithContext(ctx).Errorf("failed to create CA certificate in store: %v", result.Error)
@@ -5277,6 +5281,13 @@ func (s *SqlStore) GetActiveCACertificates(ctx context.Context, accountID string
 		log.WithContext(ctx).Errorf("failed to get active CA certificates from store: %v", result.Error)
 		return nil, status.Errorf(status.Internal, "failed to get active CA certificates from store")
 	}
+
+	for _, c := range caCerts {
+		if err := c.DecryptSensitiveData(s.fieldEncrypt); err != nil {
+			return nil, fmt.Errorf("decrypt CA certificate: %w", err)
+		}
+	}
+
 	return caCerts, nil
 }
 
