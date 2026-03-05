@@ -44,16 +44,19 @@ func UninstallCA(caPEM []byte) error {
 	return nil
 }
 
-// IsCATrusted checks whether a CA certificate is trusted by the macOS system.
+// IsCATrusted checks whether a CA certificate is present in the macOS System Keychain.
 func IsCATrusted(caPEM []byte) bool {
-	tmpFile, err := writeTempPEM(caPEM)
+	fp, err := sha1Fingerprint(caPEM)
 	if err != nil {
 		return false
 	}
-	defer os.Remove(tmpFile)
 
-	err = exec.Command("security", "verify-cert", "-c", tmpFile).Run()
-	return err == nil
+	out, err := exec.Command("security", "find-certificate", "-Z",
+		"/Library/Keychains/System.keychain").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), fp)
 }
 
 func writeTempPEM(data []byte) (string, error) {

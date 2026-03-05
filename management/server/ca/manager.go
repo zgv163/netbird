@@ -159,6 +159,11 @@ func (m *Manager) SignCertificate(ctx context.Context, req SignRequest) (*Signin
 		return nil, nil, fmt.Errorf("extract not after: %w", err)
 	}
 
+	notBefore, err := NotBeforeFromResult(result.CertPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("extract not before: %w", err)
+	}
+
 	dnsNames := csr.DNSNames
 	if wildcard && !containsName(dnsNames, "*."+peerFQDN) {
 		dnsNames = append(dnsNames, "*."+peerFQDN)
@@ -170,7 +175,7 @@ func (m *Manager) SignCertificate(ctx context.Context, req SignRequest) (*Signin
 		SerialNumber: serialNumber,
 		DNSNames:     dnsNames,
 		HasWildcard:  wildcard,
-		NotBefore:    time.Now().UTC(),
+		NotBefore:    notBefore,
 		NotAfter:     notAfter,
 		SigningType:  SigningTypeInternal,
 		SignedByCAID: ca.ID,

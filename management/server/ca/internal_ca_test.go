@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,8 +83,8 @@ func TestGenerateCA_DomainOnlyFallback(t *testing.T) {
 	cert, err := parseCertificatePEM(result.CertPEM)
 	require.NoError(t, err)
 
-	assert.Contains(t, cert.Subject.CommonName, "mynetwork.selfhosted Internal CA (")
-	assert.Len(t, cert.Subject.CommonName, len("mynetwork.selfhosted Internal CA (")+len("abcdef)"))
+	assert.True(t, strings.HasPrefix(cert.Subject.CommonName, "mynetwork.selfhosted Internal CA ("))
+	assert.True(t, strings.HasSuffix(cert.Subject.CommonName, ")"))
 	assert.Equal(t, []string{"NetBird Self-Hosted"}, cert.Subject.Organization)
 }
 

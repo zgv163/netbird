@@ -181,6 +181,15 @@ func NotAfterFromResult(certPEM []byte) (time.Time, error) {
 	return cert.NotAfter, nil
 }
 
+// NotBeforeFromResult parses the NotBefore timestamp from a signed certificate PEM.
+func NotBeforeFromResult(certPEM []byte) (time.Time, error) {
+	cert, err := parseCertificatePEM(certPEM)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse issued certificate: %w", err)
+	}
+	return cert.NotBefore, nil
+}
+
 // GenerateCAResult holds the output of GenerateCA including the resolved subject fields.
 type GenerateCAResult struct {
 	CertPEM      []byte

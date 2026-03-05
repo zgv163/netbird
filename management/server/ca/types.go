@@ -100,7 +100,7 @@ type IssuedCertParams struct {
 	HasWildcard  bool
 	NotBefore    time.Time
 	NotAfter     time.Time
-	SigningType   string
+	SigningType  string
 	SignedByCAID string
 }
 
@@ -115,7 +115,7 @@ func NewIssuedCertificate(p IssuedCertParams) *IssuedCertificate {
 		HasWildcard:  p.HasWildcard,
 		NotBefore:    p.NotBefore,
 		NotAfter:     p.NotAfter,
-		SigningType:   p.SigningType,
+		SigningType:  p.SigningType,
 		SignedByCAID: p.SignedByCAID,
 		Revoked:      false,
 		CreatedAt:    time.Now().UTC(),

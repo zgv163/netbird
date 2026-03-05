@@ -5602,6 +5602,10 @@ func (s *SqlStore) GetPeersWithActiveWildcardCerts(ctx context.Context, accountI
 
 // CreateCertIssuanceLog records a certificate issuance event.
 func (s *SqlStore) CreateCertIssuanceLog(ctx context.Context, entry *ca.CertIssuanceLog) error {
+	if entry == nil {
+		return status.Errorf(status.InvalidArgument, "cert issuance log entry is nil")
+	}
+
 	result := s.db.Create(entry)
 	if result.Error != nil {
 		log.WithContext(ctx).Errorf("failed to create cert issuance log in store: %v", result.Error)

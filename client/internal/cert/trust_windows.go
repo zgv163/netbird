@@ -44,13 +44,12 @@ func UninstallCA(caPEM []byte) error {
 
 // IsCATrusted checks whether a CA certificate is in the Windows Root store.
 func IsCATrusted(caPEM []byte) bool {
-	tmpFile, err := writeTempPEM(caPEM)
+	fp, err := sha1Fingerprint(caPEM)
 	if err != nil {
 		return false
 	}
-	defer os.Remove(tmpFile)
 
-	err = exec.Command("certutil", "-verify", tmpFile).Run()
+	err = exec.Command("certutil", "-store", "Root", fp).Run()
 	return err == nil
 }
 

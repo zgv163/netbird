@@ -96,7 +96,7 @@ func (h *handler) initCA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enable certificate authority in account settings
-	settings, err := h.accountManager.GetStore().GetAccountSettings(r.Context(), store.LockingStrengthNone, accountID)
+	settings, err := h.accountManager.GetStore().GetAccountSettings(r.Context(), store.LockingStrengthUpdate, accountID)
 	if err != nil {
 		log.WithContext(r.Context()).Errorf("failed to get account settings for CA enable: %v", err)
 		util.WriteError(r.Context(), err, w)

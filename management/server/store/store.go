@@ -289,7 +289,7 @@ type Store interface {
 
 	GetCustomDomainsCounts(ctx context.Context) (total int64, validated int64, err error)
 
-	CreateCACertificate(ctx context.Context, ca *ca.CACertificate) error
+	CreateCACertificate(ctx context.Context, caCert *ca.CACertificate) error
 	GetCACertificateByID(ctx context.Context, accountID, caID string) (*ca.CACertificate, error)
 	GetActiveCACertificates(ctx context.Context, accountID string) ([]*ca.CACertificate, error)
 	DeactivateCACertificate(ctx context.Context, accountID, caID string) error

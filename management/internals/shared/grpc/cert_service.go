@@ -111,7 +111,9 @@ func (s *Server) SignCertificate(ctx context.Context, req *proto.EncryptedMessag
 	s.accountManager.StoreEvent(ctx, peer.ID, peer.ID, accountID, activityCode, peer.EventMeta(s.networkMapController.GetDNSDomain(settings)))
 
 	var expiresAt int64
-	if notAfter, err := ca.NotAfterFromResult(result.CertPEM); err == nil {
+	if notAfter, err := ca.NotAfterFromResult(result.CertPEM); err != nil {
+		log.WithContext(ctx).Warnf("failed to parse certificate expiration: %v", err)
+	} else {
 		expiresAt = notAfter.Unix()
 	}
 
