@@ -72,7 +72,10 @@ func (s *Server) SignCertificate(ctx context.Context, req *proto.EncryptedMessag
 		return nil, err
 	}
 
-	signingType := certSigningTypeToString(signReq.SigningType)
+	signingType, err := certSigningTypeToString(signReq.SigningType)
+	if err != nil {
+		return nil, err
+	}
 	trigger := ca.TriggerManual
 
 	// For peers with login expiration enabled, tie certificate validity to the session duration.
@@ -220,11 +223,13 @@ func validateCSRSANs(csr *x509.CertificateRequest, peerFQDN string, wildcard boo
 	return nil
 }
 
-func certSigningTypeToString(t proto.CertSigningType) string {
+func certSigningTypeToString(t proto.CertSigningType) (string, error) {
 	switch t {
+	case proto.CertSigningType_CERT_SIGNING_INTERNAL:
+		return ca.SigningTypeInternal, nil
 	case proto.CertSigningType_CERT_SIGNING_ACME:
-		return ca.SigningTypeACME
+		return ca.SigningTypeACME, nil
 	default:
-		return ca.SigningTypeInternal
+		return "", status.Errorf(codes.InvalidArgument, "unsupported signing type: %v", t)
 	}
 }

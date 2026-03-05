@@ -285,6 +285,10 @@ func Fingerprint(certPEM []byte) (string, error) {
 
 // validateCSRNames checks that the CSR DNS names match the expected FQDN.
 func (s *InternalCASigner) validateCSRNames(csr *x509.CertificateRequest, peerFQDN string, wildcard bool) error {
+	if len(csr.IPAddresses) > 0 || len(csr.EmailAddresses) > 0 || len(csr.URIs) > 0 {
+		return fmt.Errorf("CSR must not contain IP, Email, or URI SANs")
+	}
+
 	if len(csr.DNSNames) == 0 {
 		return fmt.Errorf("CSR must contain at least one DNS name")
 	}
@@ -294,8 +298,14 @@ func (s *InternalCASigner) validateCSRNames(csr *x509.CertificateRequest, peerFQ
 		expectedNames["*."+strings.ToLower(peerFQDN)] = true
 	}
 
+	seen := make(map[string]struct{}, len(csr.DNSNames))
 	for _, name := range csr.DNSNames {
-		if !expectedNames[strings.ToLower(name)] {
+		normalized := strings.ToLower(name)
+		if _, exists := seen[normalized]; exists {
+			return fmt.Errorf("CSR contains duplicate DNS SAN %q", name)
+		}
+		seen[normalized] = struct{}{}
+		if !expectedNames[normalized] {
 			return fmt.Errorf("CSR contains unexpected DNS name %q, expected %v", name, peerFQDN)
 		}
 	}

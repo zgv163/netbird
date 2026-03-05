@@ -217,7 +217,7 @@ func (s *Server) UntrustCA(_ context.Context, _ *proto.UntrustCARequest) (*proto
 	}
 
 	rest := caPEMData
-	var removed int
+	var removed, failed int
 	for {
 		var block *pem.Block
 		block, rest = pem.Decode(rest)
@@ -228,15 +228,20 @@ func (s *Server) UntrustCA(_ context.Context, _ *proto.UntrustCARequest) (*proto
 		singlePEM := pem.EncodeToMemory(block)
 		if err := cert.UninstallCA(singlePEM); err != nil {
 			log.Warnf("failed to remove CA from trust store: %v", err)
+			failed++
 			continue
 		}
 		removed++
 	}
 
+	if removed == 0 {
+		return nil, gstatus.Errorf(codes.FailedPrecondition, "no CA certificates were removed")
+	}
+
 	log.Infof("removed %d CA certificate(s) from OS trust store", removed)
 
 	return &proto.UntrustCAResponse{
-		Success: true,
+		Success: failed == 0,
 	}, nil
 }
 

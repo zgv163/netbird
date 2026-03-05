@@ -10136,7 +10136,7 @@ paths:
   /api/ca/rotate:
     post:
       summary: Rotate CA
-      description: Rotate the certificate authority, deactivating the current one and creating a new one
+      description: Rotate the certificate authority by creating a new CA alongside the current one for graceful transition
       tags: [ Certificate Authority ]
       security:
         - BearerAuth: [ ]

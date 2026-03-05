@@ -297,6 +297,9 @@ func parseCAOptions(r *http.Request) (nbca.CAOptions, error) {
 		opts.Organization = *req.Organization
 	}
 	if req.ValidityDays != nil {
+		if *req.ValidityDays < 1 || *req.ValidityDays > 36500 {
+			return nbca.CAOptions{}, status.Errorf(status.InvalidArgument, "validity_days must be between 1 and 36500")
+		}
 		opts.Validity = time.Duration(*req.ValidityDays) * 24 * time.Hour
 	}
 	return opts, nil

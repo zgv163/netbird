@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/netbirdio/netbird/shared/management/http/api"
 )
@@ -42,7 +43,7 @@ func (a *CertificateAuthorityAPI) InitCA(ctx context.Context) (*api.CACertificat
 
 // GetCA get CA certificate detail
 func (a *CertificateAuthorityAPI) GetCA(ctx context.Context, caID string) (*api.CACertificateResponse, error) {
-	resp, err := a.c.NewRequest(ctx, "GET", "/api/ca/"+caID, nil, nil)
+	resp, err := a.c.NewRequest(ctx, "GET", "/api/ca/"+url.PathEscape(caID), nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func (a *CertificateAuthorityAPI) GetCA(ctx context.Context, caID string) (*api.
 
 // DeactivateCA deactivate a CA certificate
 func (a *CertificateAuthorityAPI) DeactivateCA(ctx context.Context, caID string) error {
-	resp, err := a.c.NewRequest(ctx, "DELETE", "/api/ca/"+caID, nil, nil)
+	resp, err := a.c.NewRequest(ctx, "DELETE", "/api/ca/"+url.PathEscape(caID), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -104,7 +105,7 @@ func (a *CertificateAuthorityAPI) ListIssuedCertificates(ctx context.Context, pe
 
 // RevokeCertificate revoke an issued certificate by serial number
 func (a *CertificateAuthorityAPI) RevokeCertificate(ctx context.Context, serialNumber string) error {
-	resp, err := a.c.NewRequest(ctx, "POST", "/api/ca/certificates/"+serialNumber+"/revoke", nil, nil)
+	resp, err := a.c.NewRequest(ctx, "POST", "/api/ca/certificates/"+url.PathEscape(serialNumber)+"/revoke", nil, nil)
 	if err != nil {
 		return err
 	}
