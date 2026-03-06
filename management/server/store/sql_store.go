@@ -28,6 +28,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	nbdns "github.com/netbirdio/netbird/dns"
+	"github.com/netbirdio/netbird/management/server/ca"
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/accesslogs"
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/domain"
 	"github.com/netbirdio/netbird/management/internals/modules/reverseproxy/proxy"
@@ -134,6 +135,7 @@ func NewSqlStore(ctx context.Context, db *gorm.DB, storeEngine types.Engine, met
 		&networkTypes.Network{}, &routerTypes.NetworkRouter{}, &resourceTypes.NetworkResource{}, &types.AccountOnboarding{},
 		&types.Job{}, &zones.Zone{}, &records.Record{}, &types.UserInviteRecord{}, &rpservice.Service{}, &rpservice.Target{}, &domain.Domain{},
 		&accesslogs.AccessLogEntry{}, &proxy.Proxy{},
+		&ca.CACertificate{}, &ca.IssuedCertificate{}, &ca.CertIssuanceLog{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("auto migratePreAuto: %w", err)
@@ -5375,6 +5377,26 @@ func (s *SqlStore) SaveProxy(ctx context.Context, p *proxy.Proxy) error {
 	return nil
 }
 
+// CreateCACertificate persists a new CA certificate in the database.
+// A copy is made before encryption to avoid mutating the caller's struct.
+func (s *SqlStore) CreateCACertificate(ctx context.Context, caCert *ca.CACertificate) error {
+	if caCert == nil {
+		return status.Errorf(status.InvalidArgument, "CA certificate is nil")
+	}
+
+	caCopy := *caCert
+	if err := caCopy.EncryptSensitiveData(s.fieldEncrypt); err != nil {
+		return fmt.Errorf("encrypt CA certificate: %w", err)
+	}
+
+	result := s.db.Create(&caCopy)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to create CA certificate in store: %v", result.Error)
+		return status.Errorf(status.Internal, "failed to create CA certificate in store")
+	}
+	return nil
+}
+
 // UpdateProxyHeartbeat updates the last_seen timestamp for a proxy
 func (s *SqlStore) UpdateProxyHeartbeat(ctx context.Context, proxyID string) error {
 	result := s.db.WithContext(ctx).
@@ -5385,6 +5407,60 @@ func (s *SqlStore) UpdateProxyHeartbeat(ctx context.Context, proxyID string) err
 	if result.Error != nil {
 		log.WithContext(ctx).Errorf("failed to update proxy heartbeat: %v", result.Error)
 		return status.Errorf(status.Internal, "failed to update proxy heartbeat")
+	}
+	return nil
+}
+
+// GetCACertificateByID returns a CA certificate by its ID for the given account.
+func (s *SqlStore) GetCACertificateByID(ctx context.Context, accountID, caID string) (*ca.CACertificate, error) {
+	var caCert ca.CACertificate
+	result := s.db.Take(&caCert, accountAndIDQueryCondition, accountID, caID)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, status.Errorf(status.NotFound, "CA certificate with ID %s not found", caID)
+		}
+		log.WithContext(ctx).Errorf("failed to get CA certificate from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get CA certificate from store")
+	}
+
+	if err := caCert.DecryptSensitiveData(s.fieldEncrypt); err != nil {
+		return nil, fmt.Errorf("decrypt CA certificate: %w", err)
+	}
+
+	return &caCert, nil
+}
+
+// GetActiveCACertificates returns all active CA certificates for the given account, ordered by creation time descending.
+func (s *SqlStore) GetActiveCACertificates(ctx context.Context, accountID string) ([]*ca.CACertificate, error) {
+	var caCerts []*ca.CACertificate
+	result := s.db.Where("account_id = ? AND is_active = ?", accountID, true).
+		Order("created_at DESC").
+		Find(&caCerts)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to get active CA certificates from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get active CA certificates from store")
+	}
+
+	for _, c := range caCerts {
+		if err := c.DecryptSensitiveData(s.fieldEncrypt); err != nil {
+			return nil, fmt.Errorf("decrypt CA certificate: %w", err)
+		}
+	}
+
+	return caCerts, nil
+}
+
+// DeactivateCACertificate marks a CA certificate as inactive.
+func (s *SqlStore) DeactivateCACertificate(ctx context.Context, accountID, caID string) error {
+	result := s.db.Model(&ca.CACertificate{}).
+		Where(accountAndIDQueryCondition, accountID, caID).
+		Update("is_active", false)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to deactivate CA certificate in store: %v", result.Error)
+		return status.Errorf(status.Internal, "failed to deactivate CA certificate in store")
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "CA certificate with ID %s not found", caID)
 	}
 	return nil
 }
@@ -5425,4 +5501,128 @@ func (s *SqlStore) CleanupStaleProxies(ctx context.Context, inactivityDuration t
 	}
 
 	return nil
+}
+
+// CreateIssuedCertificate persists a new issued certificate record.
+func (s *SqlStore) CreateIssuedCertificate(ctx context.Context, cert *ca.IssuedCertificate) error {
+	if cert == nil {
+		return status.Errorf(status.InvalidArgument, "issued certificate is nil")
+	}
+
+	result := s.db.Create(cert)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to create issued certificate in store: %v", result.Error)
+		return status.Errorf(status.Internal, "failed to create issued certificate in store")
+	}
+	return nil
+}
+
+// GetIssuedCertificates returns all issued certificates for an account, ordered by creation time descending.
+func (s *SqlStore) GetIssuedCertificates(ctx context.Context, accountID string) ([]*ca.IssuedCertificate, error) {
+	var certs []*ca.IssuedCertificate
+	result := s.db.Where("account_id = ?", accountID).Order("created_at DESC").Find(&certs)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to get issued certificates from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get issued certificates from store")
+	}
+	return certs, nil
+}
+
+// GetIssuedCertificatesByPeer returns all issued certificates for a peer, ordered by creation time descending.
+func (s *SqlStore) GetIssuedCertificatesByPeer(ctx context.Context, accountID, peerID string) ([]*ca.IssuedCertificate, error) {
+	var certs []*ca.IssuedCertificate
+	result := s.db.Where(accountAndPeerIDQueryCondition, accountID, peerID).
+		Order("created_at DESC").
+		Find(&certs)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to get issued certificates from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get issued certificates from store")
+	}
+	return certs, nil
+}
+
+// GetIssuedCertificateBySerial returns an issued certificate by its serial number.
+func (s *SqlStore) GetIssuedCertificateBySerial(ctx context.Context, accountID, serialNumber string) (*ca.IssuedCertificate, error) {
+	var cert ca.IssuedCertificate
+	result := s.db.Take(&cert, "account_id = ? AND serial_number = ?", accountID, serialNumber)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, status.Errorf(status.NotFound, "issued certificate with serial %s not found", serialNumber)
+		}
+		log.WithContext(ctx).Errorf("failed to get issued certificate from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get issued certificate from store")
+	}
+	return &cert, nil
+}
+
+// RevokeCertificate marks an issued certificate as revoked.
+func (s *SqlStore) RevokeCertificate(ctx context.Context, accountID, serialNumber string) error {
+	result := s.db.Model(&ca.IssuedCertificate{}).
+		Where("account_id = ? AND serial_number = ?", accountID, serialNumber).
+		Update("revoked", true)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to revoke certificate in store: %v", result.Error)
+		return status.Errorf(status.Internal, "failed to revoke certificate in store")
+	}
+	if result.RowsAffected == 0 {
+		return status.Errorf(status.NotFound, "issued certificate with serial %s not found", serialNumber)
+	}
+	return nil
+}
+
+// GetExpiringCertificates returns non-revoked issued certificates that expire before the given time.
+func (s *SqlStore) GetExpiringCertificates(ctx context.Context, accountID string, expiringBefore time.Time) ([]*ca.IssuedCertificate, error) {
+	var certs []*ca.IssuedCertificate
+	result := s.db.Where("account_id = ? AND not_after < ? AND revoked = ?", accountID, expiringBefore, false).
+		Find(&certs)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to get expiring certificates from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get expiring certificates from store")
+	}
+	return certs, nil
+}
+
+// GetPeersWithActiveWildcardCerts returns the set of peer IDs that have at least one
+// active (non-revoked, non-expired) issued certificate with HasWildcard=true.
+func (s *SqlStore) GetPeersWithActiveWildcardCerts(ctx context.Context, accountID string) (map[string]struct{}, error) {
+	var peerIDs []string
+	result := s.db.Model(&ca.IssuedCertificate{}).
+		Where("account_id = ? AND has_wildcard = ? AND revoked = ? AND not_after > ?", accountID, true, false, time.Now()).
+		Distinct().Pluck("peer_id", &peerIDs)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to get peers with wildcard certs from store: %v", result.Error)
+		return nil, status.Errorf(status.Internal, "failed to get peers with wildcard certs from store")
+	}
+	m := make(map[string]struct{}, len(peerIDs))
+	for _, id := range peerIDs {
+		m[id] = struct{}{}
+	}
+	return m, nil
+}
+
+// CreateCertIssuanceLog records a certificate issuance event.
+func (s *SqlStore) CreateCertIssuanceLog(ctx context.Context, entry *ca.CertIssuanceLog) error {
+	if entry == nil {
+		return status.Errorf(status.InvalidArgument, "cert issuance log entry is nil")
+	}
+
+	result := s.db.Create(entry)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to create cert issuance log in store: %v", result.Error)
+		return status.Errorf(status.Internal, "failed to create cert issuance log in store")
+	}
+	return nil
+}
+
+// CountCertIssuancesInWindow counts certificate issuances for a peer within the given time window.
+func (s *SqlStore) CountCertIssuancesInWindow(ctx context.Context, accountID, peerID string, since time.Time) (int64, error) {
+	var count int64
+	result := s.db.Model(&ca.CertIssuanceLog{}).
+		Where("account_id = ? AND peer_id = ? AND issued_at >= ?", accountID, peerID, since).
+		Count(&count)
+	if result.Error != nil {
+		log.WithContext(ctx).Errorf("failed to count cert issuances in store: %v", result.Error)
+		return 0, status.Errorf(status.Internal, "failed to count cert issuances in store")
+	}
+	return count, nil
 }
